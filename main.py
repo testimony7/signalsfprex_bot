@@ -1,24 +1,13 @@
  import logging
 import asyncio
 import sys
+import os
 from datetime import datetime
 from telegram import Update
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, 
-    ContextTypes, MessageHandler, filters
+    Application, CommandHandler, 
+    ContextTypes, 
 )
-
-try:
-    from config import BOT_TOKEN, ADMIN_ID, FOREX_PAIRS, DEFAULT_SL, DEFAULT_TP
-    from forex_api import ForexAPI
-    from signal_generator import SignalGenerator
-    from database import Database
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    import pytz
-except ImportError as e:
-    print(f"Import error: {e}")
-    print("Make sure all required files exist")
-    sys.exit(1)
 
 # Setup logging
 logging.basicConfig(
@@ -26,6 +15,20 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Import config with error handling
+try:
+    from config import BOT_TOKEN, ADMIN_ID, FOREX_PAIRS
+except Exception as e:
+    logger.error(f"Config error: {e}")
+    logger.info("Make sure BOT_TOKEN and ADMIN_ID are set in environment variables")
+    sys.exit(1)
+
+from forex_api import ForexAPI
+from signal_generator import SignalGenerator
+from database import Database
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import pytz
 
 # Initialize components
 forex_api = ForexAPI()
@@ -56,10 +59,10 @@ class SignalsForexBot:
                 parse_mode='Markdown'
             )
             db.add_user(user.id, user.username, user.first_name)
+            logger.info(f"User {user.id} started the bot")
         except Exception as e:
             logger.error(f"Error in start command: {e}")
-            await update.message.reply_text("❌ An error occurred. Please try again.")
-        
+            
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Help command handler"""
         help_text = """
@@ -67,7 +70,7 @@ class SignalsForexBot:
 
 /start - Start the bot
 /help - Show this help message
-/signal <pair> - Get signal for specific pair (e.g., /signal EURUSD)
+/signal <pair> - Get signal for specific pair
 /signals - Get signals for all pairs
 /analysis <pair> - Get technical analysis
 /market - Get live market updates
@@ -80,9 +83,6 @@ class SignalsForexBot:
 /signal EURUSD
 /analysis GBPUSD
 /market
-
-*Support:*
-Contact @support for any issues
 """
         try:
             await update.message.reply_text(help_text, parse_mode='Markdown')
@@ -108,7 +108,6 @@ Contact @support for any issues
                 )
                 return
                 
-            # Get current price
             price = forex_api.get_live_price(pair)
             if not price:
                 await update.message.reply_text(
@@ -116,14 +115,9 @@ Contact @support for any issues
                 )
                 return
                 
-            # Generate signal
             signal = signal_gen.generate_signal(pair, price)
-            
-            # Format signal message
             signal_text = self.format_signal_message(signal)
             await update.message.reply_text(signal_text, parse_mode='Markdown')
-            
-            logger.info(f"Signal generated for {pair} by user {update.effective_user.id}")
             
         except Exception as e:
             logger.error(f"Error in signal_command: {e}")
@@ -151,14 +145,12 @@ Contact @support for any issues
                 )
                 return
                 
-            # Format and send all signals
             message = "📊 *Live Signals for All Pairs*\n\n"
             for signal in signals:
                 message += f"*{signal['pair']}*: {signal['action']} @ {signal['entry']}\n"
                 message += f"📈 SL: {signal['sl']} | TP: {signal['tp']}\n"
                 message += f"📊 Confidence: {signal['confidence']}\n\n"
                 
-            # Split message if too long
             if len(message) > 4000:
                 parts = [message[i:i+4000] for i in range(0, len(message), 4000)]
                 for part in parts:
@@ -187,7 +179,6 @@ Contact @support for any issues
                 )
                 return
                 
-            # Get analysis
             analysis = signal_gen.get_technical_analysis(pair)
             if not analysis:
                 await update.message.reply_text(
@@ -296,8 +287,7 @@ Contact @support for any issues
                 "• Take Profit (TP)\n"
                 "• Technical analysis\n"
                 "• Live market updates\n\n"
-                "Data sources: Live market data\n"
-                "Support: @support",
+                "Powered by Python Telegram Bot API",
                 parse_mode='Markdown'
             )
         except Exception as e:
@@ -332,7 +322,6 @@ Contact @support for any issues
             if not subscribers:
                 return
                 
-            # Generate signals
             signals = []
             for pair in FOREX_PAIRS[:5]:
                 price = forex_api.get_live_price(pair)
@@ -343,14 +332,12 @@ Contact @support for any issues
             if not signals:
                 return
                 
-            # Format message
             message = "📊 *Daily Signal Update*\n\n"
             for signal in signals:
                 message += f"*{signal['pair']}*: {signal['action']} @ {signal['entry']}\n"
                 message += f"SL: {signal['sl']} | TP: {signal['tp']}\n"
                 message += f"Confidence: {signal['confidence']}\n\n"
                 
-            # Send to all subscribers
             for user_id in subscribers:
                 try:
                     await self.application.bot.send_message(
@@ -378,9 +365,9 @@ Contact @support for any issues
             logger.error(f"Error in error_handler: {e}")
             
     def run(self):
-        """Run the bot"""
+        """Run the bot with proper polling"""
         try:
-            # Create application
+            # Create application with connection pool settings
             self.application = Application.builder().token(BOT_TOKEN).build()
             
             # Add command handlers
@@ -398,13 +385,17 @@ Contact @support for any issues
             # Add error handler
             self.application.add_error_handler(self.error_handler)
             
-            # Start scheduler for daily signals
+            # Start the scheduler
             scheduler.add_job(self.send_daily_signals, 'interval', hours=24)
             scheduler.start()
             
-            # Run the bot
-            logger.info("🚀 Bot started successfully!")
-            self.application.run_polling(allowed_updates=Update.ALL_TYPES)
+            # Run the bot with proper polling
+            logger.info("🚀 Bot started successfully! Polling for updates...")
+            self.application.run_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True,
+                timeout=60  # Increased timeout
+            )
             
         except Exception as e:
             logger.error(f"Error running bot: {e}")
@@ -412,8 +403,11 @@ Contact @support for any issues
 
 if __name__ == "__main__":
     try:
+        logger.info("Starting SignalsForexBot...")
         bot = SignalsForexBot()
         bot.run()
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
         sys.exit(1)
