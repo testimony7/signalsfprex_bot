@@ -1,17 +1,24 @@
-import logging
+ import logging
 import asyncio
+import sys
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, 
     ContextTypes, MessageHandler, filters
 )
-from config import BOT_TOKEN, ADMIN_ID, FOREX_PAIRS, DEFAULT_SL, DEFAULT_TP
-from forex_api import ForexAPI
-from signal_generator import SignalGenerator
-from database import Database
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import pytz
+
+try:
+    from config import BOT_TOKEN, ADMIN_ID, FOREX_PAIRS, DEFAULT_SL, DEFAULT_TP
+    from forex_api import ForexAPI
+    from signal_generator import SignalGenerator
+    from database import Database
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    import pytz
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("Make sure all required files exist")
+    sys.exit(1)
 
 # Setup logging
 logging.basicConfig(
@@ -35,19 +42,23 @@ class SignalsForexBot:
         
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start command handler"""
-        user = update.effective_user
-        await update.message.reply_text(
-            f"🚀 *Welcome to SignalsForexBot!*\n\n"
-            f"Hello {user.first_name}! 👋\n\n"
-            f"I'm your smart Forex signals assistant. Here's what I can do:\n\n"
-            f"📊 *Live Signals* - Get real-time trading signals\n"
-            f"📈 *Market Analysis* - Technical & fundamental analysis\n"
-            f"🎯 *SL & TP Targets* - Precise stop-loss and take-profit levels\n"
-            f"💹 *Live Updates* - Current market prices and trends\n\n"
-            f"Use /help to see all available commands.",
-            parse_mode='Markdown'
-        )
-        db.add_user(user.id, user.username, user.first_name)
+        try:
+            user = update.effective_user
+            await update.message.reply_text(
+                f"🚀 *Welcome to SignalsForexBot!*\n\n"
+                f"Hello {user.first_name}! 👋\n\n"
+                f"I'm your smart Forex signals assistant. Here's what I can do:\n\n"
+                f"📊 *Live Signals* - Get real-time trading signals\n"
+                f"📈 *Market Analysis* - Technical & fundamental analysis\n"
+                f"🎯 *SL & TP Targets* - Precise stop-loss and take-profit levels\n"
+                f"💹 *Live Updates* - Current market prices and trends\n\n"
+                f"Use /help to see all available commands.",
+                parse_mode='Markdown'
+            )
+            db.add_user(user.id, user.username, user.first_name)
+        except Exception as e:
+            logger.error(f"Error in start command: {e}")
+            await update.message.reply_text("❌ An error occurred. Please try again.")
         
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Help command handler"""
@@ -73,7 +84,10 @@ class SignalsForexBot:
 *Support:*
 Contact @support for any issues
 """
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        try:
+            await update.message.reply_text(help_text, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Error in help command: {e}")
         
     async def signal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Get signal for specific pair"""
@@ -109,14 +123,11 @@ Contact @support for any issues
             signal_text = self.format_signal_message(signal)
             await update.message.reply_text(signal_text, parse_mode='Markdown')
             
-            # Log the signal
             logger.info(f"Signal generated for {pair} by user {update.effective_user.id}")
             
         except Exception as e:
             logger.error(f"Error in signal_command: {e}")
-            await update.message.reply_text(
-                "❌ An error occurred. Please try again later."
-            )
+            await update.message.reply_text("❌ An error occurred. Please try again later.")
             
     async def signals_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Get signals for all pairs"""
@@ -157,9 +168,7 @@ Contact @support for any issues
                 
         except Exception as e:
             logger.error(f"Error in signals_command: {e}")
-            await update.message.reply_text(
-                "❌ An error occurred. Please try again later."
-            )
+            await update.message.reply_text("❌ An error occurred. Please try again later.")
             
     async def analysis_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Get technical analysis for a pair"""
@@ -202,9 +211,7 @@ Contact @support for any issues
             
         except Exception as e:
             logger.error(f"Error in analysis_command: {e}")
-            await update.message.reply_text(
-                "❌ An error occurred. Please try again later."
-            )
+            await update.message.reply_text("❌ An error occurred. Please try again later.")
             
     async def market_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Get live market updates"""
@@ -229,60 +236,72 @@ Contact @support for any issues
             
         except Exception as e:
             logger.error(f"Error in market_command: {e}")
-            await update.message.reply_text(
-                "❌ Could not fetch market data. Please try again later."
-            )
+            await update.message.reply_text("❌ Could not fetch market data. Please try again later.")
             
     async def subscribe_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Subscribe to daily signals"""
-        user_id = update.effective_user.id
-        db.subscribe_user(user_id)
-        user_subscriptions[user_id] = True
-        
-        await update.message.reply_text(
-            "✅ *Subscription Successful!*\n\n"
-            "You will now receive daily forex signals.\n"
-            "Use /unsubscribe to stop receiving signals.",
-            parse_mode='Markdown'
-        )
+        try:
+            user_id = update.effective_user.id
+            db.subscribe_user(user_id)
+            user_subscriptions[user_id] = True
+            
+            await update.message.reply_text(
+                "✅ *Subscription Successful!*\n\n"
+                "You will now receive daily forex signals.\n"
+                "Use /unsubscribe to stop receiving signals.",
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error in subscribe_command: {e}")
+            await update.message.reply_text("❌ An error occurred. Please try again.")
         
     async def unsubscribe_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Unsubscribe from daily signals"""
-        user_id = update.effective_user.id
-        db.unsubscribe_user(user_id)
-        if user_id in user_subscriptions:
-            del user_subscriptions[user_id]
-            
-        await update.message.reply_text(
-            "✅ *Unsubscribed Successfully!*\n\n"
-            "You will no longer receive daily signals.",
-            parse_mode='Markdown'
-        )
+        try:
+            user_id = update.effective_user.id
+            db.unsubscribe_user(user_id)
+            if user_id in user_subscriptions:
+                del user_subscriptions[user_id]
+                
+            await update.message.reply_text(
+                "✅ *Unsubscribed Successfully!*\n\n"
+                "You will no longer receive daily signals.",
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error in unsubscribe_command: {e}")
+            await update.message.reply_text("❌ An error occurred. Please try again.")
         
     async def pairs_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show all available pairs"""
-        pairs_list = "\n".join([f"• {pair}" for pair in FOREX_PAIRS])
-        await update.message.reply_text(
-            f"📊 *Available Forex Pairs:*\n\n{pairs_list}\n\n"
-            f"Total: {len(FOREX_PAIRS)} pairs",
-            parse_mode='Markdown'
-        )
+        try:
+            pairs_list = "\n".join([f"• {pair}" for pair in FOREX_PAIRS])
+            await update.message.reply_text(
+                f"📊 *Available Forex Pairs:*\n\n{pairs_list}\n\n"
+                f"Total: {len(FOREX_PAIRS)} pairs",
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error in pairs_command: {e}")
         
     async def about_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """About the bot"""
-        await update.message.reply_text(
-            "🤖 *About SignalsForexBot*\n\n"
-            "Version: 1.0.0\n\n"
-            "This bot provides smart forex signals with:\n"
-            "• Entry points\n"
-            "• Stop Loss (SL)\n"
-            "• Take Profit (TP)\n"
-            "• Technical analysis\n"
-            "• Live market updates\n\n"
-            "Data sources: Live market data\n"
-            "Support: @support",
-            parse_mode='Markdown'
-        )
+        try:
+            await update.message.reply_text(
+                "🤖 *About SignalsForexBot*\n\n"
+                "Version: 1.0.0\n\n"
+                "This bot provides smart forex signals with:\n"
+                "• Entry points\n"
+                "• Stop Loss (SL)\n"
+                "• Take Profit (TP)\n"
+                "• Technical analysis\n"
+                "• Live market updates\n\n"
+                "Data sources: Live market data\n"
+                "Support: @support",
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Error in about_command: {e}")
         
     def format_signal_message(self, signal):
         """Format signal message with emojis"""
@@ -315,7 +334,7 @@ Contact @support for any issues
                 
             # Generate signals
             signals = []
-            for pair in FOREX_PAIRS[:5]:  # Send signals for top 5 pairs
+            for pair in FOREX_PAIRS[:5]:
                 price = forex_api.get_live_price(pair)
                 if price:
                     signal = signal_gen.generate_signal(pair, price)
@@ -339,7 +358,7 @@ Contact @support for any issues
                         text=message,
                         parse_mode='Markdown'
                     )
-                    await asyncio.sleep(0.1)  # Rate limiting
+                    await asyncio.sleep(0.1)
                 except Exception as e:
                     logger.error(f"Failed to send to {user_id}: {e}")
                     
@@ -350,10 +369,13 @@ Contact @support for any issues
         """Handle errors"""
         logger.error(f"Update {update} caused error {context.error}")
         
-        if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "❌ An error occurred. Please try again later."
-            )
+        try:
+            if update and update.effective_message:
+                await update.effective_message.reply_text(
+                    "❌ An error occurred. Please try again later."
+                )
+        except Exception as e:
+            logger.error(f"Error in error_handler: {e}")
             
     def run(self):
         """Run the bot"""
@@ -381,7 +403,7 @@ Contact @support for any issues
             scheduler.start()
             
             # Run the bot
-            logger.info("Bot started successfully!")
+            logger.info("🚀 Bot started successfully!")
             self.application.run_polling(allowed_updates=Update.ALL_TYPES)
             
         except Exception as e:
@@ -389,5 +411,9 @@ Contact @support for any issues
             raise
 
 if __name__ == "__main__":
-    bot = SignalsForexBot()
-    bot.run()
+    try:
+        bot = SignalsForexBot()
+        bot.run()
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        sys.exit(1)
